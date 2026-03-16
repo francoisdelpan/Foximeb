@@ -1,0 +1,138 @@
+var APP_TIMEZONE = 'Europe/Paris';
+
+function getScriptConfig() {
+  var props = PropertiesService.getScriptProperties();
+  var requiredTrackingProperties = props.getProperty('NOTION_DAILY_TRACKING_REQUIRED_PROPERTIES');
+
+  return {
+    notionApiKey: props.getProperty('NOTION_API_KEY'),
+    notionTasksDatabaseId: props.getProperty('NOTION_DATABASE_ID'),
+    notionDailyTrackingDatabaseId: props.getProperty('NOTION_DAILY_TRACKING_DATABASE_ID'),
+    openaiApiKey: props.getProperty('OPENAI_API_KEY'),
+    discordBriefWebhookUrl: props.getProperty('DISCORD_WEBHOOK_URL'),
+    discordPromptWebhookUrl: props.getProperty('DISCORD_IMPROVEMENT_WEBHOOK_URL'),
+    discordAlertWebhookUrl: props.getProperty('DISCORD_ALERT_WEBHOOK_URL') || props.getProperty('DISCORD_WEBHOOK_URL'),
+    notionTasksTitleProperty: props.getProperty('NOTION_TASKS_TITLE_PROPERTY') || 'Tasks',
+    notionTasksStatusProperty: props.getProperty('NOTION_TASKS_STATUS_PROPERTY') || 'States',
+    notionTasksPriorityProperty: props.getProperty('NOTION_TASKS_PRIORITY_PROPERTY') || 'Priority',
+    notionTasksDueDateProperty: props.getProperty('NOTION_TASKS_DUE_DATE_PROPERTY') || 'Due date',
+    notionDailyTrackingDateProperty: props.getProperty('NOTION_DAILY_TRACKING_DATE_PROPERTY') || 'Dates',
+    notionDailyTrackingCompletionProperty: props.getProperty('NOTION_DAILY_TRACKING_COMPLETION_PROPERTY') || 'Completed',
+    notionDailyTrackingTitleProperty: props.getProperty('NOTION_DAILY_TRACKING_TITLE_PROPERTY') || 'Name',
+    notionDailyTrackingRequiredProperties: requiredTrackingProperties
+  };
+}
+
+function requireConfig(config, keys) {
+  var missing = [];
+  var i;
+
+  for (i = 0; i < keys.length; i += 1) {
+    if (!config[keys[i]]) {
+      missing.push(keys[i]);
+    }
+  }
+
+  if (missing.length) {
+    throw new Error('Configuration manquante: ' + missing.join(', '));
+  }
+}
+
+function isoDateParis(date) {
+  return Utilities.formatDate(date, APP_TIMEZONE, 'yyyy-MM-dd');
+}
+
+function formatParis(date, pattern) {
+  return Utilities.formatDate(date, APP_TIMEZONE, pattern);
+}
+
+function daysBetweenParis(dateStr, todayStr) {
+  var d1 = new Date(dateStr + 'T00:00:00');
+  var d2 = new Date(todayStr + 'T00:00:00');
+  var ms = d2.getTime() - d1.getTime();
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
+function truncateText(text, maxLength) {
+  if (!text) {
+    return '';
+  }
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return text.slice(0, maxLength - 3) + '...';
+}
+
+function splitTextIntoChunks(text, maxLength) {
+  var chunks = [];
+  var remaining = text || '';
+
+  while (remaining.length > maxLength) {
+    var splitAt = remaining.lastIndexOf('\n', maxLength);
+    if (splitAt < Math.floor(maxLength * 0.5)) {
+      splitAt = maxLength;
+    }
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).replace(/^\n+/, '');
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
+function getPriorityRank(priority) {
+  if (priority === 'P1') {
+    return 1;
+  }
+
+  if (priority === 'P2') {
+    return 2;
+  }
+
+  if (priority === 'P3') {
+    return 3;
+  }
+
+  return 9;
+}
+
+function fetchJson(url, options) {
+  var response = UrlFetchApp.fetch(url, options);
+  var body = response.getContentText();
+  var code = response.getResponseCode();
+  var data;
+
+  try {
+    data = body ? JSON.parse(body) : {};
+  } catch (error) {
+    data = {};
+  }
+
+  if (code < 200 || code >= 300) {
+    throw new Error('HTTP ' + code + ' sur ' + url + ' : ' + body);
+  }
+
+  return data;
+}
+
+function createTextBlob(filename, content) {
+  return Utilities.newBlob(content, 'text/plain', filename);
+}
+
+function getDefaultDailyTrackingRequiredProperties() {
+  return [
+    'Wake Up',
+    'Go to bed',
+    'Job',
+    'Utema',
+    'Digital Work',
+    'Sport',
+    'Ambiente'
+  ];
+}
