@@ -145,8 +145,21 @@ function buildWeeklyPlanningDiscordEmbed(planPackage) {
         inline: true
       },
       {
-        name: 'Taches ouvertes',
-        value: String((planPackage.context.tasksUpcoming || []).length + (planPackage.context.tasksOverdue || []).length),
+        name: 'Focus',
+        value: 'Sport, rando, Utema, menage',
+        inline: true
+      },
+      {
+        name: 'Incoherences',
+        value: String(planPackage.context.inconsistencyCount || 0),
+        inline: true
+      },
+      {
+        name: 'Cible S24',
+        value:
+          'Bricoman ' + String(planPackage.context.weeklyTargets.bricomanHours) + 'h\n' +
+          'Sport ' + String(planPackage.context.weeklyTargets.sportSessions) + ' seances\n' +
+          'Utema ' + String(planPackage.context.weeklyTargets.utemaHours) + 'h',
         inline: true
       }
     ],

@@ -1,6 +1,6 @@
 var APP_TIMEZONE = 'Europe/Paris';
-var WORK_CALENDAR_ID_PROPERTY = '6ob6hj01n9cgrur9up6c7226no';
-var WEEKLY_PLANNING_WEBHOOK_PROPERTY = null;
+var WORK_CALENDAR_ID_PROPERTY = 'WORK_CALENDAR_ID';
+var WEEKLY_PLANNING_WEBHOOK_PROPERTY = 'DISCORD_WEEKLY_PLANNING_WEBHOOK_URL';
 
 function getScriptConfig() {
   var props = PropertiesService.getScriptProperties();
@@ -60,6 +60,27 @@ function formatMinutesAsHourMinute(totalMinutes) {
   var minutes = safeMinutes % 60;
 
   return pad2(hours) + 'h' + pad2(minutes);
+}
+
+function formatMinutesAsNaturalFrench(totalMinutes) {
+  var safeMinutes = Math.max(0, Number(totalMinutes) || 0);
+  var hours = Math.floor(safeMinutes / 60);
+  var minutes = safeMinutes % 60;
+  var parts = [];
+
+  if (hours > 0) {
+    parts.push(hours + 'h');
+  }
+
+  if (minutes > 0) {
+    parts.push(pad2(minutes));
+  }
+
+  if (!parts.length) {
+    return '0h';
+  }
+
+  return parts.join('');
 }
 
 function startOfParisDay(date) {

@@ -57,3 +57,38 @@ function testBriefDiscordOutputs() {
 function testWeeklyPlan() {
   return runWeeklyPlanningWorkflow();
 }
+
+function testWorkCalendar() {
+  var config = getScriptConfig();
+  var today = new Date();
+  var calendar = getCalendarByIdOrDefault(config.workCalendarId);
+  var events;
+  var payload;
+
+  if (!config.workCalendarId) {
+    throw new Error('WORK_CALENDAR_ID manquant dans Script Properties.');
+  }
+
+  if (!calendar) {
+    throw new Error('Aucun agenda trouve pour WORK_CALENDAR_ID=' + config.workCalendarId);
+  }
+
+  events = getWorkSchedule(config, today);
+  payload = {
+    workCalendarId: config.workCalendarId,
+    calendarName: calendar.getName(),
+    timezone: calendar.getTimeZone ? calendar.getTimeZone() : 'unknown',
+    date: formatParis(today, 'yyyy-MM-dd'),
+    eventCountToday: events.length,
+    events: events.map(function(event) {
+      return {
+        title: event.title,
+        start: formatParis(event.start, 'yyyy-MM-dd HH:mm'),
+        end: formatParis(event.end, 'yyyy-MM-dd HH:mm')
+      };
+    })
+  };
+
+  Logger.log(JSON.stringify(payload, null, 2));
+  return payload;
+}
