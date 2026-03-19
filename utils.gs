@@ -102,6 +102,18 @@ function getNextWeekStart(date) {
   return addDays(baseDate, daysUntilNextMonday);
 }
 
+function getIsoWeekNumber(date) {
+  var target = new Date(date.getTime());
+  var dayNr = (target.getDay() + 6) % 7;
+  var firstThursday;
+
+  target.setDate(target.getDate() - dayNr + 3);
+  firstThursday = new Date(target.getFullYear(), 0, 4);
+  firstThursday.setDate(firstThursday.getDate() - ((firstThursday.getDay() + 6) % 7) + 3);
+
+  return 1 + Math.round((target.getTime() - firstThursday.getTime()) / 604800000);
+}
+
 function daysBetweenParis(dateStr, todayStr) {
   var d1 = new Date(dateStr + 'T00:00:00');
   var d2 = new Date(todayStr + 'T00:00:00');

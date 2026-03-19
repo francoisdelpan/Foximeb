@@ -134,7 +134,9 @@ function buildWeeklyPlanningDiscordEmbed(planPackage) {
     fields: [
       {
         name: 'Semaine',
-        value: formatParis(planPackage.context.weekStart, 'dd/MM') + ' -> ' + formatParis(planPackage.context.weekEnd, 'dd/MM'),
+        value:
+          'Semaine ' + String(planPackage.context.isoWeekNumber) + '\n' +
+          formatParis(planPackage.context.weekStart, 'dd/MM') + ' -> ' + formatParis(planPackage.context.weekEnd, 'dd/MM'),
         inline: true
       },
       {
@@ -152,14 +154,6 @@ function buildWeeklyPlanningDiscordEmbed(planPackage) {
       {
         name: 'Incoherences',
         value: String(planPackage.context.inconsistencyCount || 0),
-        inline: true
-      },
-      {
-        name: 'Cible S24',
-        value:
-          'Bricoman ' + String(planPackage.context.weeklyTargets.bricomanHours) + 'h\n' +
-          'Sport ' + String(planPackage.context.weeklyTargets.sportSessions) + ' seances\n' +
-          'Utema ' + String(planPackage.context.weeklyTargets.utemaHours) + 'h',
         inline: true
       }
     ],
