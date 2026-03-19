@@ -700,9 +700,9 @@ function buildWeeklyPlanRenderResult(context, planningState, workMinutes) {
   var lines = [];
   var totalSportLabel = String(planningState.sportSessions) + ' seances' + (planningState.hikeCount ? ' + ' + String(planningState.hikeCount) + ' rando' : '');
   var hydratedTarget =
-    formatMinutesAsNaturalFrench(workMinutes) + ' Bricoman, ' +
-    totalSportLabel + ', ' +
-    formatMinutesAsNaturalFrench(planningState.utemaMinutes) + ' Utema.';
+    'Bricoman **' + formatMinutesAsNaturalFrench(workMinutes) + '**\n' +
+    'Sport **' + totalSportLabel + '**\n' +
+    'Utema **' + formatMinutesAsNaturalFrench(planningState.utemaMinutes) + '**';
 
   lines.push('Semaine ' + String(context.isoWeekNumber) + ' (' + formatParis(context.weekStart, 'dd/MM') + ' - ' + formatParis(context.weekEnd, 'dd/MM') + ')');
   lines.push('');
@@ -714,7 +714,6 @@ function buildWeeklyPlanRenderResult(context, planningState, workMinutes) {
 
   lines.push('ARBITRAGES MAJEURS : ' + buildWeeklyArbitrageLine(planningState));
   lines.push('COMPTEUR INCOHERENCES : ' + String(context.inconsistencyCount) + '.');
-  lines.push('CIBLE POUR CETTE SEMAINE : ' + hydratedTarget);
 
   return {
     text: lines.join('\n').trim(),
