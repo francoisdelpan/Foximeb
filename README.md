@@ -7,6 +7,7 @@ Bot personnel Google Apps Script pour piloter la journee depuis Notion, Google C
 - Genere un brief quotidien a partir :
   - des taches Notion du jour et en retard
   - des evenements Google Calendar du jour
+  - des horaires de travail d un agenda dedie si configure
 - Envoie ce brief sur Discord :
   - en embed dans le salon principal
   - en version audio via TTS
@@ -47,6 +48,10 @@ A definir dans `Script Properties` de Google Apps Script.
 
 - `DISCORD_ALERT_WEBHOOK_URL`
   Remplace le salon brief pour certaines alertes si besoin.
+- `DISCORD_WEEKLY_PLANNING_WEBHOOK_URL`
+  Webhook du salon cible pour le recap hebdo. Par defaut, Foximeb reutilise `DISCORD_WEBHOOK_URL`.
+- `WORK_CALENDAR_ID`
+  ID de l agenda Google Calendar dedie au travail. Si defini, Foximeb l injecte dans le brief comme contrainte dure.
 - `NOTION_TASKS_TITLE_PROPERTY`
   Par defaut : `Tasks`
 - `NOTION_TASKS_STATUS_PROPERTY`
@@ -80,10 +85,30 @@ Par defaut, Foximeb controle :
   Genere le brief du matin, l'envoie sur Discord, puis envoie le bloc d'amelioration dans le second salon.
 - `testBriefDiscordOutputs()`
   Meme logique, sans generer l'audio.
+- `generateWeeklyPlan()`
+  Genere la proposition de slots de la semaine a venir et l envoie sur Discord.
+- `testWeeklyPlan()`
+  Lance la generation du plan hebdo a la demande.
 - `sendDailyTrackingReminderIfMissing()`
   Controle l'entree du jour dans Notion et alerte si des champs obligatoires manquent.
 - `setupDailyTrackingReminderTrigger()`
   Cree un trigger Apps Script quotidien vers 22h00.
+- `setupWeeklyPlanningTrigger()`
+  Cree un trigger Apps Script hebdomadaire le dimanche matin vers 09h00.
+
+## Agenda de travail
+
+- L agenda principal continue de fournir les evenements generaux de la journee.
+- Si `WORK_CALENDAR_ID` est renseigne, `getWorkSchedule(...)` lit cet agenda separement.
+- Le prompt du brief utilise ensuite ces horaires comme contrainte dure pour organiser le plan d attaque.
+- Si plusieurs blocs existent dans la meme journee, Foximeb calcule aussi la coupure totale pour mieux formuler le brief.
+
+## Planification hebdomadaire
+
+- `generateWeeklyPlan()` lit la semaine de travail a venir a partir de `WORK_CALENDAR_ID`.
+- Le prompt integre les contraintes sport, deepwork Utema, menage du samedi, rando et fin des ecrans.
+- Le resultat est envoye dans Discord sous forme de recap court en embed.
+- La creation automatique de taches Notion n est pas encore branchee.
 
 ## Setup
 

@@ -30,6 +30,14 @@ function sendBriefToDiscordChannels(config, briefPackage, audioBlob) {
   }, createTextBlob('brief_improvement_pack.txt', improvementCopyBlock));
 }
 
+function sendWeeklyPlanningToDiscord(config, planPackage) {
+  requireConfig(config, ['discordWeeklyPlanningWebhookUrl']);
+
+  postDiscordJson(config.discordWeeklyPlanningWebhookUrl, {
+    embeds: [buildWeeklyPlanningDiscordEmbed(planPackage)]
+  });
+}
+
 function sendDailyTrackingAlert(config, trackingStatus) {
   requireConfig(config, ['discordBriefWebhookUrl']);
 
@@ -113,6 +121,37 @@ function buildPromptReviewDiscordEmbed(briefPackage) {
     ],
     footer: {
       text: 'Les blocs ci-dessous sont penses pour etre copies dans une autre IA.'
+    },
+    timestamp: new Date().toISOString()
+  };
+}
+
+function buildWeeklyPlanningDiscordEmbed(planPackage) {
+  return {
+    title: 'Plan hebdo propose',
+    color: 3066993,
+    description: truncateText(planPackage.planText, 4096),
+    fields: [
+      {
+        name: 'Semaine',
+        value: formatParis(planPackage.context.weekStart, 'dd/MM') + ' -> ' + formatParis(planPackage.context.weekEnd, 'dd/MM'),
+        inline: true
+      },
+      {
+        name: 'Jours avec travail',
+        value: String(planPackage.context.weekDays.filter(function(day) {
+          return day.workSummary.hasWork;
+        }).length),
+        inline: true
+      },
+      {
+        name: 'Taches ouvertes',
+        value: String((planPackage.context.tasksUpcoming || []).length + (planPackage.context.tasksOverdue || []).length),
+        inline: true
+      }
+    ],
+    footer: {
+      text: 'Planification hebdo | ' + formatParis(new Date(), 'dd/MM/yyyy HH:mm')
     },
     timestamp: new Date().toISOString()
   };

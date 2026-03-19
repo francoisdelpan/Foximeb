@@ -52,25 +52,105 @@ function runDailyTrackingReminderWorkflow() {
 
 function collectDailyBriefContext(config) {
   var taskPack = getNotionTasksTodayAndOverdue(config);
+  var workSchedule = getWorkSchedule(config, new Date());
+  var workSummary = summarizeWorkSchedule(workSchedule);
 
   return {
     tasksToday: taskPack.today,
     tasksOverdue: taskPack.overdue,
-    events: getEventsForToday()
+    events: getEventsForToday(),
+    workSchedule: workSchedule,
+    workSummary: workSummary
   };
 }
 
 function getEventsForToday() {
-  var calendar = CalendarApp.getDefaultCalendar();
+  return getCalendarEventsForDate(null, new Date());
+}
+
+function getWorkSchedule(config, date) {
+  if (!config.workCalendarId) {
+    return [];
+  }
+
+  return getCalendarEventsForDate(config.workCalendarId, date);
+}
+
+function getCalendarEventsForDate(calendarId, date) {
+  var calendar = getCalendarByIdOrDefault(calendarId);
   var now = new Date();
-  var start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  var end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+  var baseDate = date || now;
+  var start = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0);
+  var end = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 1, 0, 0, 0);
+
+  if (!calendar) {
+    throw new Error('Agenda introuvable pour l ID: ' + calendarId);
+  }
 
   return calendar.getEvents(start, end).map(function(event) {
     return {
       title: event.getTitle(),
-      start: event.getStartTime()
+      start: event.getStartTime(),
+      end: event.getEndTime()
     };
+  });
+}
+
+function summarizeWorkSchedule(workSchedule) {
+  if (!workSchedule.length) {
+    return {
+      hasWork: false,
+      firstStart: null,
+      lastEnd: null,
+      totalMinutes: 0,
+      occupiedMinutes: 0,
+      breakMinutes: 0,
+      blockCount: 0
+    };
+  }
+
+  var sortedSchedule = workSchedule.slice().sort(function(a, b) {
+    return a.start.getTime() - b.start.getTime();
+  });
+
+  return sortedSchedule.reduce(function(summary, event, index) {
+    var startTime = event.start.getTime();
+    var endTime = event.end.getTime();
+    var previousEvent;
+    var gapMinutes;
+
+    if (!summary.firstStart || startTime < summary.firstStart.getTime()) {
+      summary.firstStart = event.start;
+    }
+
+    if (!summary.lastEnd || endTime > summary.lastEnd.getTime()) {
+      summary.lastEnd = event.end;
+    }
+
+    summary.occupiedMinutes += Math.max(0, Math.round((endTime - startTime) / 60000));
+    summary.hasWork = true;
+    summary.blockCount += 1;
+
+    if (index > 0) {
+      previousEvent = sortedSchedule[index - 1];
+      gapMinutes = Math.round((event.start.getTime() - previousEvent.end.getTime()) / 60000);
+
+      if (gapMinutes > 0) {
+        summary.breakMinutes += gapMinutes;
+      }
+    }
+
+    summary.totalMinutes = Math.max(0, Math.round((summary.lastEnd.getTime() - summary.firstStart.getTime()) / 60000));
+
+    return summary;
+  }, {
+    hasWork: false,
+    firstStart: null,
+    lastEnd: null,
+    totalMinutes: 0,
+    occupiedMinutes: 0,
+    breakMinutes: 0,
+    blockCount: 0
   });
 }
 
@@ -86,6 +166,7 @@ function buildDailyBriefPrompts(context) {
   var userPrompt =
     'Voici les donnees du jour.\n\n' +
     'EVENEMENTS:\n' + formatEventsForPrompt(context.events) + '\n\n' +
+    'HORAIRES DE TRAVAIL:\n' + formatWorkScheduleForPrompt(context.workSchedule, context.workSummary) + '\n\n' +
     'TACHES AUJOURD HUI:\n' + formatTasksForPrompt(context.tasksToday) + '\n\n' +
     'RETARD:\n' + formatTasksForPrompt(context.tasksOverdue) + '\n\n' +
     'Regles de decision:\n' +
@@ -94,8 +175,11 @@ function buildDailyBriefPrompts(context) {
     '3. Priorite P1 avant P2. Si une P1 est ancienne, impose une decision explicite: la faire aujourd hui ou la replanifier.\n' +
     '4. Donne un plan d attaque: premier bloc, deuxieme bloc, et ce qui peut attendre.\n' +
     '5. Limite les priorites du jour a 3 maximum.\n' +
-    '6. Mentionne les evenements seulement s ils contraignent l execution.\n' +
-    '7. Ne recopie pas les listes telles quelles: synthetise et tranche.\n\n' +
+    '6. Les horaires de travail sont une contrainte dure: le plan d attaque doit tenir autour de ces plages.\n' +
+    '7. Ne compte pas la pause du midi comme du temps de travail effectif. Si une coupure existe, formule-la clairement.\n' +
+    '8. Si la coupure du midi est suffisante, propose un seul sujet de brainstorm utile a faire avancer pendant cette pause.\n' +
+    '9. Mentionne les evenements seulement s ils contraignent l execution.\n' +
+    '10. Ne recopie pas les listes telles quelles: synthetise et tranche.\n\n' +
     'Ecris uniquement le brief final.';
 
   return {
@@ -140,6 +224,220 @@ function formatEventsForPrompt(events) {
   return events.map(function(event) {
     return '- ' + formatParis(event.start, 'HH:mm') + ' : ' + event.title;
   }).join('\n');
+}
+
+function formatWorkScheduleForPrompt(workSchedule, workSummary) {
+  if (!workSchedule.length) {
+    return 'Aucun horaire de travail renseigne.';
+  }
+
+  var summaryLine =
+    'Travail: ' + formatParis(workSummary.firstStart, 'HH:mm') +
+    ' -> ' + formatParis(workSummary.lastEnd, 'HH:mm') +
+    ' (' + formatMinutesAsHourMinute(workSummary.totalMinutes) + ' d amplitude';
+
+  if (workSummary.breakMinutes > 0) {
+    summaryLine += ', dont ' + formatMinutesAsHourMinute(workSummary.breakMinutes) + ' de coupure';
+  }
+
+  summaryLine += ').';
+
+  return (
+    summaryLine + '\n' +
+    workSchedule.map(function(event) {
+      return '- ' + formatParis(event.start, 'HH:mm') + ' -> ' + formatParis(event.end, 'HH:mm') + ' : ' + event.title;
+    }).join('\n')
+  );
+}
+
+function buildDailyPlanningPrompt(context, criteria) {
+  var planningCriteria = criteria || {};
+  var criteriaLines = [
+    'Objectif: proposer des slots concrets pour sport, travail perso et taches admin autour des horaires de travail.',
+    'Moment de generation: ' + (planningCriteria.generationMoment || 'apres le brief du matin'),
+    'Duree minimum d un slot: ' + (planningCriteria.minimumSlotMinutes || 30) + ' minutes',
+    'Duree cible sport: ' + (planningCriteria.sportTargetMinutes || 'a definir'),
+    'Duree cible travail perso: ' + (planningCriteria.personalWorkTargetMinutes || 'a definir'),
+    'Duree cible taches admin: ' + (planningCriteria.adminTargetMinutes || 'a definir'),
+    'Heure limite du soir: ' + (planningCriteria.latestEndTime || 'a definir'),
+    'Regle energie: ' + (planningCriteria.energyRule || 'a definir'),
+    'Regle arbitrage: ' + (planningCriteria.arbitrationRule || 'a definir')
+  ];
+
+  return [
+    'CONTEXTE JOURNEE',
+    'HORAIRES DE TRAVAIL:',
+    formatWorkScheduleForPrompt(context.workSchedule || [], context.workSummary || summarizeWorkSchedule([])),
+    '',
+    'EVENEMENTS:',
+    formatEventsForPrompt(context.events || []),
+    '',
+    'TACHES:',
+    formatTasksForPrompt((context.tasksToday || []).concat(context.tasksOverdue || [])),
+    '',
+    'CRITERES',
+    criteriaLines.join('\n'),
+    '',
+    'MISSION',
+    'Propose des slots horaires ordonnes, realistes et compatibles avec les contraintes ci-dessus. Justifie tres brievement chaque slot.'
+  ].join('\n');
+}
+
+function runWeeklyPlanningWorkflow(options) {
+  var workflowOptions = options || {};
+  var config = getScriptConfig();
+
+  requireConfig(config, [
+    'notionApiKey',
+    'notionTasksDatabaseId',
+    'openaiApiKey',
+    'discordWeeklyPlanningWebhookUrl'
+  ]);
+
+  var context = collectWeeklyPlanningContext(config, workflowOptions.referenceDate);
+  var criteria = getDefaultWeeklyPlanningCriteria();
+  var prompts = buildWeeklyPlanningPrompts(context, criteria);
+  var planText = generateWeeklyPlanningWithOpenAI(config.openaiApiKey, prompts);
+  var planPackage = {
+    context: context,
+    criteria: criteria,
+    prompts: prompts,
+    planText: planText
+  };
+
+  sendWeeklyPlanningToDiscord(config, planPackage);
+  return planPackage;
+}
+
+function collectWeeklyPlanningContext(config, referenceDate) {
+  var weekStart = getNextWeekStart(referenceDate || new Date());
+  var weekEnd = addDays(weekStart, 6);
+  var taskPack = getNotionTasksForDateWindow(config, weekStart, weekEnd);
+  var weekDays = [];
+  var offset;
+  var date;
+  var workSchedule;
+
+  for (offset = 0; offset < 7; offset += 1) {
+    date = addDays(weekStart, offset);
+    workSchedule = getWorkSchedule(config, date);
+    weekDays.push({
+      date: date,
+      isoDate: isoDateParis(date),
+      label: formatParis(date, 'EEEE dd/MM'),
+      workSchedule: workSchedule,
+      workSummary: summarizeWorkSchedule(workSchedule),
+      isSaturday: date.getDay() === 6,
+      isSunday: date.getDay() === 0
+    });
+  }
+
+  return {
+    weekStart: weekStart,
+    weekEnd: weekEnd,
+    weekDays: weekDays,
+    tasksUpcoming: taskPack.upcoming,
+    tasksOverdue: taskPack.overdue
+  };
+}
+
+function getDefaultWeeklyPlanningCriteria() {
+  return {
+    generationMoment: 'dimanche matin pour la semaine a venir',
+    earliestStartTime: '06:30',
+    breakfastBufferRule: 'Prevoir un petit dej avant le travail. La derniere heure avant prise de poste est une zone grise, a ne pas surcharger par du deepwork exigeant.',
+    sportRule: 'Sport idealement en fin de journee. Slot minimum 60 minutes avec 30 minutes de transition apres la fin du travail. Fin de seance idealement au plus tard a 20:30. Alterner course et velo quand c est coherent.',
+    hikeRule: 'Proposer une rando de 4 a 5 heures sur un jour de repos ou une apres-midi largement libre.',
+    utemaRule: 'Pour Utema, plus le bloc est long mieux c est, surtout pour le code. Si pas possible, proposer des sessions de stratifi ou gestion en plus petits blocs. Idealement avant le travail seulement si le timing reste confortable avec petit dej.',
+    splitShiftRule: 'Si le poste finit tot, reutiliser l apres-midi pour un gros bloc deepwork, par exemple apres une prise de poste 06:45-14:00 viser 14:30-18:30.',
+    cleaningRule: 'Le samedi, reserver un slot menage de 3 heures, avec fin ideale avant 20:00.',
+    screenCutoff: '22:00',
+    outputRule: 'Produire un recap court, propre, lisible, centre sur les vrais slots de la semaine.'
+  };
+}
+
+function buildWeeklyPlanningPrompts(context, criteria) {
+  var systemPrompt =
+    'Tu es Foximeb, assistant de planification hebdomadaire. ' +
+    'Tu proposes une semaine realiste, executable et dense, sans blabla. ' +
+    'Tu optimises l energie, la faisabilite et la clarte. ' +
+    'Tu t adresses a Francois au tutoiement. ' +
+    'Tu privilegies de vrais blocs exploitables plutot que du remplissage.';
+
+  var userPrompt =
+    'Planifie la semaine a venir a partir des contraintes ci-dessous.\n\n' +
+    'SEMAINE:\n' + formatWeeklyWorkScheduleForPrompt(context.weekDays) + '\n\n' +
+    'TACHES A PRENDRE EN COMPTE:\n' + formatWeeklyTasksForPrompt(context.tasksUpcoming, context.tasksOverdue) + '\n\n' +
+    'CRITERES:\n' +
+    '- Heure de debut possible le matin: ' + criteria.earliestStartTime + '\n' +
+    '- Petit dej: ' + criteria.breakfastBufferRule + '\n' +
+    '- Sport: ' + criteria.sportRule + '\n' +
+    '- Rando: ' + criteria.hikeRule + '\n' +
+    '- Utema: ' + criteria.utemaRule + '\n' +
+    '- Cas poste du matin: ' + criteria.splitShiftRule + '\n' +
+    '- Menage samedi: ' + criteria.cleaningRule + '\n' +
+    '- Fin des ecrans: ' + criteria.screenCutoff + '\n' +
+    '- Format de sortie: ' + criteria.outputRule + '\n\n' +
+    'Regles de decision:\n' +
+    '1. Respecte strictement les plages de travail.\n' +
+    '2. Ne colle pas de sport immediatement a la sortie du travail: garde 30 minutes de tampon.\n' +
+    '3. Le deepwork code doit etre groupe en gros blocs quand possible.\n' +
+    '4. Si un jour est trop charge, reduis d abord les petites gestions avant de casser un gros bloc deepwork utile.\n' +
+    '5. Propose au maximum une rando sur la semaine, seulement si le contexte la rend realiste.\n' +
+    '6. Rends la semaine lisible jour par jour avec horaires proposes et une justification ultra courte.\n' +
+    '7. Termine par une section tres courte: arbitrages majeurs de la semaine.\n\n' +
+    'Ecris uniquement le plan hebdomadaire final.';
+
+  return {
+    systemPrompt: systemPrompt,
+    userPrompt: userPrompt
+  };
+}
+
+function formatWeeklyWorkScheduleForPrompt(weekDays) {
+  return weekDays.map(function(day) {
+    return day.label + '\n' + indentMultiline(formatWorkScheduleForPrompt(day.workSchedule, day.workSummary), '  ');
+  }).join('\n\n');
+}
+
+function formatWeeklyTasksForPrompt(tasksUpcoming, tasksOverdue) {
+  var lines = [];
+
+  if (tasksOverdue && tasksOverdue.length) {
+    lines.push('RETARDS');
+    lines.push(formatTasksForPrompt(tasksOverdue));
+  }
+
+  if (tasksUpcoming && tasksUpcoming.length) {
+    lines.push('A VENIR CETTE SEMAINE');
+    lines.push(formatTasksForPrompt(tasksUpcoming));
+  }
+
+  if (!lines.length) {
+    return 'Aucune tache datee ouverte sur la semaine.';
+  }
+
+  return lines.join('\n');
+}
+
+function indentMultiline(text, prefix) {
+  return String(text || '').split('\n').map(function(line) {
+    return prefix + line;
+  }).join('\n');
+}
+
+function generateWeeklyPlanningWithOpenAI(openaiApiKey, prompts) {
+  var data = callOpenAIChat(openaiApiKey, {
+    model: 'gpt-4o-mini',
+    temperature: 0.5,
+    max_tokens: 900,
+    messages: [
+      { role: 'system', content: prompts.systemPrompt },
+      { role: 'user', content: prompts.userPrompt }
+    ]
+  });
+
+  return extractOpenAIText(data);
 }
 
 function generateBriefWithOpenAI(openaiApiKey, prompts) {

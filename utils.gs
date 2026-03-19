@@ -1,4 +1,6 @@
 var APP_TIMEZONE = 'Europe/Paris';
+var WORK_CALENDAR_ID_PROPERTY = '6ob6hj01n9cgrur9up6c7226no';
+var WEEKLY_PLANNING_WEBHOOK_PROPERTY = null;
 
 function getScriptConfig() {
   var props = PropertiesService.getScriptProperties();
@@ -12,6 +14,8 @@ function getScriptConfig() {
     discordBriefWebhookUrl: props.getProperty('DISCORD_WEBHOOK_URL'),
     discordPromptWebhookUrl: props.getProperty('DISCORD_IMPROVEMENT_WEBHOOK_URL'),
     discordAlertWebhookUrl: props.getProperty('DISCORD_ALERT_WEBHOOK_URL') || props.getProperty('DISCORD_WEBHOOK_URL'),
+    discordWeeklyPlanningWebhookUrl: props.getProperty(WEEKLY_PLANNING_WEBHOOK_PROPERTY) || props.getProperty('DISCORD_WEBHOOK_URL'),
+    workCalendarId: props.getProperty(WORK_CALENDAR_ID_PROPERTY),
     notionTasksTitleProperty: props.getProperty('NOTION_TASKS_TITLE_PROPERTY') || 'Tasks',
     notionTasksStatusProperty: props.getProperty('NOTION_TASKS_STATUS_PROPERTY') || 'States',
     notionTasksPriorityProperty: props.getProperty('NOTION_TASKS_PRIORITY_PROPERTY') || 'Priority',
@@ -44,6 +48,37 @@ function isoDateParis(date) {
 
 function formatParis(date, pattern) {
   return Utilities.formatDate(date, APP_TIMEZONE, pattern);
+}
+
+function pad2(value) {
+  return value < 10 ? '0' + value : String(value);
+}
+
+function formatMinutesAsHourMinute(totalMinutes) {
+  var safeMinutes = Math.max(0, Number(totalMinutes) || 0);
+  var hours = Math.floor(safeMinutes / 60);
+  var minutes = safeMinutes % 60;
+
+  return pad2(hours) + 'h' + pad2(minutes);
+}
+
+function startOfParisDay(date) {
+  var baseDate = date || new Date();
+  return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0);
+}
+
+function addDays(date, days) {
+  var result = new Date(date.getTime());
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function getNextWeekStart(date) {
+  var baseDate = startOfParisDay(date || new Date());
+  var day = baseDate.getDay();
+  var daysUntilNextMonday = day === 0 ? 1 : 8 - day;
+
+  return addDays(baseDate, daysUntilNextMonday);
 }
 
 function daysBetweenParis(dateStr, todayStr) {
@@ -135,4 +170,12 @@ function getDefaultDailyTrackingRequiredProperties() {
     'Sport',
     'Ambiente'
   ];
+}
+
+function getCalendarByIdOrDefault(calendarId) {
+  if (!calendarId) {
+    return CalendarApp.getDefaultCalendar();
+  }
+
+  return CalendarApp.getCalendarById(calendarId);
 }

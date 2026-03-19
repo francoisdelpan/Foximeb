@@ -73,6 +73,84 @@ function getNotionTasksTodayAndOverdue(config) {
   };
 }
 
+function getNotionTasksForDateWindow(config, startDate, endDate) {
+  requireConfig(config, ['notionApiKey', 'notionTasksDatabaseId']);
+
+  var isoStart = isoDateParis(startDate);
+  var isoEnd = isoDateParis(endDate);
+  var payload = {
+    filter: {
+      and: [
+        {
+          property: config.notionTasksDueDateProperty,
+          date: { on_or_before: isoEnd }
+        },
+        {
+          or: [
+            {
+              property: config.notionTasksStatusProperty,
+              status: { equals: 'Not started' }
+            },
+            {
+              property: config.notionTasksStatusProperty,
+              status: { equals: 'In progress' }
+            },
+            {
+              property: config.notionTasksStatusProperty,
+              status: { equals: 'Testing' }
+            }
+          ]
+        }
+      ]
+    },
+    sorts: [
+      { property: config.notionTasksDueDateProperty, direction: 'ascending' }
+    ],
+    page_size: 100
+  };
+  var data = queryNotionDatabase(config.notionApiKey, config.notionTasksDatabaseId, payload);
+  var upcoming = [];
+  var overdue = [];
+
+  (data.results || []).forEach(function(page) {
+    var task = mapNotionTaskPage(page, config, isoStart);
+
+    if (!task) {
+      return;
+    }
+
+    if (task.due < isoStart) {
+      overdue.push(task);
+      return;
+    }
+
+    if (task.due <= isoEnd) {
+      upcoming.push(task);
+    }
+  });
+
+  upcoming.sort(function(a, b) {
+    if (a.due !== b.due) {
+      return a.due < b.due ? -1 : 1;
+    }
+
+    return getPriorityRank(a.priority) - getPriorityRank(b.priority);
+  });
+
+  overdue.sort(function(a, b) {
+    if (a.age_days !== b.age_days) {
+      return a.age_days - b.age_days;
+    }
+
+    return getPriorityRank(a.priority) - getPriorityRank(b.priority);
+  });
+
+  return {
+    upcoming: upcoming,
+    overdue: overdue
+  };
+}
+
 function getDailyTrackingStatus(config, date) {
   requireConfig(config, ['notionApiKey', 'notionDailyTrackingDatabaseId']);
 
