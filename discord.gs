@@ -155,6 +155,11 @@ function buildWeeklyPlanningDiscordEmbed(planPackage) {
         name: 'Incoherences',
         value: String(planPackage.context.inconsistencyCount || 0),
         inline: true
+      },
+      {
+        name: 'Cible Semaine',
+        value: planPackage.hydratedTarget || 'Cible indisponible',
+        inline: false
       }
     ],
     footer: {

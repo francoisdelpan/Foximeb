@@ -114,6 +114,11 @@ function getIsoWeekNumber(date) {
   return 1 + Math.round((target.getTime() - firstThursday.getTime()) / 604800000);
 }
 
+function getFrenchWeekdayName(date) {
+  var names = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  return names[(date || new Date()).getDay()];
+}
+
 function daysBetweenParis(dateStr, todayStr) {
   var d1 = new Date(dateStr + 'T00:00:00');
   var d2 = new Date(todayStr + 'T00:00:00');

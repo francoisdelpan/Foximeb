@@ -316,12 +316,13 @@ function runWeeklyPlanningWorkflow(options) {
   var context = collectWeeklyPlanningContext(config, workflowOptions.referenceDate);
   var criteria = getDefaultWeeklyPlanningCriteria();
   var prompts = buildWeeklyPlanningPrompts(context, criteria);
-  var planText = buildWeeklyPlanText(context, criteria);
+  var planRender = buildWeeklyPlanText(context, criteria);
   var planPackage = {
     context: context,
     criteria: criteria,
     prompts: prompts,
-    planText: planText
+    planText: planRender.text,
+    hydratedTarget: planRender.hydratedTarget
   };
 
   sendWeeklyPlanningToDiscord(config, planPackage);
@@ -348,7 +349,7 @@ function collectWeeklyPlanningContext(config, referenceDate) {
     weekDays.push({
       date: date,
       isoDate: isoDateParis(date),
-      label: formatParis(date, 'EEEE dd/MM'),
+      label: getFrenchWeekdayName(date) + ' ' + formatParis(date, 'dd/MM'),
       workSchedule: normalizedWorkDay.workSchedule,
       workSummary: normalizedWorkDay.workSummary,
       workLabel: normalizedWorkDay.workLabel,
@@ -530,7 +531,7 @@ function buildWeeklyPlanText(context, criteria) {
     planningState.dayPlans.push(buildWeeklyDayPlan(context.weekDays[dayIndex], dayIndex, planningState, criteria));
   }
 
-  return renderWeeklyPlanText(context, planningState, workMinutes);
+  return buildWeeklyPlanRenderResult(context, planningState, workMinutes);
 }
 
 function buildWeeklyDayPlan(day, dayIndex, planningState, criteria) {
@@ -692,8 +693,16 @@ function updatePlanningCountersFromItems(items, planningState) {
 }
 
 function renderWeeklyPlanText(context, planningState, workMinutes) {
+  return buildWeeklyPlanRenderResult(context, planningState, workMinutes).text;
+}
+
+function buildWeeklyPlanRenderResult(context, planningState, workMinutes) {
   var lines = [];
   var totalSportLabel = String(planningState.sportSessions) + ' seances' + (planningState.hikeCount ? ' + ' + String(planningState.hikeCount) + ' rando' : '');
+  var hydratedTarget =
+    formatMinutesAsNaturalFrench(workMinutes) + ' Bricoman, ' +
+    totalSportLabel + ', ' +
+    formatMinutesAsNaturalFrench(planningState.utemaMinutes) + ' Utema.';
 
   lines.push('Semaine ' + String(context.isoWeekNumber) + ' (' + formatParis(context.weekStart, 'dd/MM') + ' - ' + formatParis(context.weekEnd, 'dd/MM') + ')');
   lines.push('');
@@ -705,21 +714,19 @@ function renderWeeklyPlanText(context, planningState, workMinutes) {
 
   lines.push('ARBITRAGES MAJEURS : ' + buildWeeklyArbitrageLine(planningState));
   lines.push('COMPTEUR INCOHERENCES : ' + String(context.inconsistencyCount) + '.');
-  lines.push(
-    'CIBLE POUR CETTE SEMAINE : ' +
-    formatMinutesAsNaturalFrench(workMinutes) + ' Bricoman, ' +
-    totalSportLabel + ', ' +
-    formatMinutesAsNaturalFrench(planningState.utemaMinutes) + ' Utema.'
-  );
+  lines.push('CIBLE POUR CETTE SEMAINE : ' + hydratedTarget);
 
-  return lines.join('\n').trim();
+  return {
+    text: lines.join('\n').trim(),
+    hydratedTarget: hydratedTarget
+  };
 }
 
 function renderWeeklyDayLines(dayPlan) {
   var lines = [];
   var items = [];
 
-  lines.push(capitalizeFirst(dayPlan.day.label));
+  lines.push('**' + capitalizeFirst(dayPlan.day.label) + '**');
 
   if (dayPlan.day.workSummary.hasWork) {
     items.push({
