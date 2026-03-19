@@ -23,7 +23,9 @@ Bot personnel Google Apps Script pour piloter la journee depuis Notion, Google C
 ## Structure du projet
 
 - [Code.gs](/Users/francoisdelpan/Documents/Foximeb/Code.gs) : points d'entree Apps Script
-- [brief.gs](/Users/francoisdelpan/Documents/Foximeb/brief.gs) : orchestration du brief, prompts, OpenAI, TTS
+- [brief.gs](/Users/francoisdelpan/Documents/Foximeb/brief.gs) : brief quotidien, prompts, OpenAI, TTS
+- [calendar.gs](/Users/francoisdelpan/Documents/Foximeb/calendar.gs) : lecture et agregation des agendas Google Calendar
+- [weekly_planning.gs](/Users/francoisdelpan/Documents/Foximeb/weekly_planning.gs) : logique et rendu du plan hebdomadaire
 - [discord.gs](/Users/francoisdelpan/Documents/Foximeb/discord.gs) : webhooks Discord et embeds
 - [notion.gs](/Users/francoisdelpan/Documents/Foximeb/notion.gs) : requetes Notion et verification du Daily Tracking
 - [utils.gs](/Users/francoisdelpan/Documents/Foximeb/utils.gs) : config et helpers partages
