@@ -10,6 +10,10 @@ function sendDailyTrackingReminderIfMissing() {
   return runDailyTrackingReminderWorkflow();
 }
 
+function testDailyTrackingReminderFromDrive() {
+  return runDailyTrackingReminderWorkflow();
+}
+
 function setupDailyTrackingReminderTrigger() {
   var triggerName = 'sendDailyTrackingReminderIfMissing';
   var triggers = ScriptApp.getProjectTriggers();
@@ -52,6 +56,14 @@ function testBriefDiscordOutputs() {
   return runDailyBriefWorkflow({
     skipTts: true
   });
+}
+
+function testTodoistTasksForToday() {
+  var config = getScriptConfig();
+  var payload = getTodoistTasksTodayAndOverdue(config);
+
+  Logger.log(JSON.stringify(payload, null, 2));
+  return payload;
 }
 
 function testWeeklyPlan() {

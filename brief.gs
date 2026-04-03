@@ -3,8 +3,6 @@ function runDailyBriefWorkflow(options) {
   var config = getScriptConfig();
 
   requireConfig(config, [
-    'notionApiKey',
-    'notionTasksDatabaseId',
     'openaiApiKey',
     'discordBriefWebhookUrl',
     'discordPromptWebhookUrl'
@@ -32,26 +30,28 @@ function runDailyBriefWorkflow(options) {
 function runDailyTrackingReminderWorkflow() {
   var config = getScriptConfig();
   var trackingStatus;
+  var trackingPackage;
 
   requireConfig(config, [
-    'notionApiKey',
-    'notionDailyTrackingDatabaseId',
-    'discordBriefWebhookUrl'
+    'googleDailyTrackingFileId',
+    'openaiApiKey',
+    'discordAlertWebhookUrl'
   ]);
 
-  trackingStatus = getDailyTrackingStatus(config, new Date());
+  trackingStatus = getDailyTrackingStatusFromDrive(config, new Date());
 
   if (trackingStatus.completed) {
     Logger.log('Daily Tracking deja rempli pour ' + trackingStatus.date);
     return trackingStatus;
   }
 
-  sendDailyTrackingAlert(config, trackingStatus);
-  return trackingStatus;
+  trackingPackage = buildDailyTrackingNotificationPackage(config, trackingStatus);
+  sendDailyTrackingAlert(config, trackingStatus, trackingPackage.embed);
+  return trackingPackage;
 }
 
 function collectDailyBriefContext(config) {
-  var taskPack = getNotionTasksTodayAndOverdue(config);
+  var taskPack = getDailyBriefTaskPack(config);
   var workSchedule = getWorkSchedule(config, new Date());
   var workSummary = summarizeWorkSchedule(workSchedule);
 
@@ -281,6 +281,166 @@ function buildImprovementPack(prompts, briefText, selfReview) {
       'Ameliore le prompt de generation de ce brief quotidien sans changer l intention du brief. Sois concret, plus dense, plus direct, et reduis les banalites.',
     prompt: prompts.systemPrompt + '\n\n' + prompts.userPrompt,
     result: briefText
+  };
+}
+
+function buildDailyTrackingNotificationPackage(config, trackingStatus) {
+  var prompts = buildDailyTrackingEmbedPrompts(trackingStatus);
+  var embed;
+
+  try {
+    embed = generateDailyTrackingEmbedWithOpenAI(config.openaiApiKey, prompts);
+  } catch (error) {
+    Logger.log('Fallback embed Daily Tracking apres erreur OpenAI: ' + error.message);
+    embed = buildDailyTrackingFallbackEmbed(trackingStatus);
+  }
+
+  return {
+    trackingStatus: trackingStatus,
+    prompts: prompts,
+    embed: embed
+  };
+}
+
+function buildDailyTrackingEmbedPrompts(trackingStatus) {
+  var missingBlock = trackingStatus.missingProperties.length
+    ? trackingStatus.missingProperties.map(function(item) {
+        return '- ' + item;
+      }).join('\n')
+    : '- Aucun';
+  var filledBlock = trackingStatus.filledProperties && trackingStatus.filledProperties.length
+    ? trackingStatus.filledProperties.map(function(item) {
+        return '- ' + item.name + ': ' + item.value;
+      }).join('\n')
+    : '- Aucun champ reconnu';
+  var notesBlock = trackingStatus.notes && trackingStatus.notes.length
+    ? trackingStatus.notes.map(function(item) {
+        return '- ' + item;
+      }).join('\n')
+    : '- Aucune note';
+  var entryLines = trackingStatus.entryLines && trackingStatus.entryLines.length
+    ? trackingStatus.entryLines.map(function(line) {
+        return '- ' + line;
+      }).join('\n')
+    : '- Aucune ligne exploitable';
+
+  return {
+    systemPrompt:
+      'Tu generes uniquement un objet JSON valide compatible avec un embed Discord. ' +
+      'Aucune balise markdown, aucun commentaire, aucune phrase avant ou apres le JSON.',
+    userPrompt:
+      'Construit un embed Discord de rappel du soir pour un Daily Tracking incomplet.\n' +
+      'Ton: direct, execution, sobre, utile. Francais.\n' +
+      'Contraintes:\n' +
+      '- Retourne strictement un objet JSON.\n' +
+      '- Proprietes autorisees: title, description, color, fields, footer.\n' +
+      '- Maximum 6 fields.\n' +
+      '- Chaque field doit contenir: name, value, inline.\n' +
+      '- Mentionne clairement si l entree du jour est absente ou si elle est incomplete.\n' +
+      '- Fais ressortir les champs manquants comme prochaine action.\n\n' +
+      'DONNEES:\n' +
+      'Date du controle: ' + trackingStatus.date + '\n' +
+      'Date de l entree retenue: ' + (trackingStatus.entryDate || 'absente') + '\n' +
+      'Entree du jour trouvee: ' + (trackingStatus.exists ? 'oui' : 'non') + '\n' +
+      'Complete: ' + (trackingStatus.completed ? 'oui' : 'non') + '\n' +
+      'Titre: ' + (trackingStatus.title || 'Daily Tracking') + '\n' +
+      'Source: ' + (trackingStatus.sourceName || DAILY_TRACKING_FILE_NAME) + '\n\n' +
+      'CHAMPS REMPLIS:\n' + filledBlock + '\n\n' +
+      'CHAMPS MANQUANTS:\n' + missingBlock + '\n\n' +
+      'NOTES:\n' + notesBlock + '\n\n' +
+      'LIGNES BRUTES DE L ENTREE:\n' + entryLines
+  };
+}
+
+function generateDailyTrackingEmbedWithOpenAI(openaiApiKey, prompts) {
+  var data = callOpenAIChat(openaiApiKey, {
+    model: 'gpt-4o-mini',
+    temperature: 0.2,
+    max_tokens: 500,
+    messages: [
+      { role: 'system', content: prompts.systemPrompt },
+      { role: 'user', content: prompts.userPrompt }
+    ]
+  });
+  var content = extractOpenAIText(data);
+  var embed = parseJsonResponse(content);
+
+  if (!embed || Object.prototype.toString.call(embed) !== '[object Object]') {
+    throw new Error('Embed OpenAI invalide: ' + content);
+  }
+
+  return sanitizeDiscordEmbed(embed);
+}
+
+function parseJsonResponse(content) {
+  var cleaned = String(content || '').trim();
+
+  if (cleaned.indexOf('```') === 0) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+  }
+
+  return JSON.parse(cleaned);
+}
+
+function sanitizeDiscordEmbed(embed) {
+  var sanitized = {
+    title: truncateText(String(embed.title || 'Daily Tracking incomplet'), 256),
+    description: truncateText(String(embed.description || ''), 4096),
+    color: Number(embed.color) || 15158332,
+    fields: [],
+    footer: {
+      text: truncateText(
+        String(embed.footer && embed.footer.text ? embed.footer.text : 'Rappel automatique 22:00'),
+        2048
+      )
+    },
+    timestamp: new Date().toISOString()
+  };
+
+  (embed.fields || []).slice(0, 6).forEach(function(field) {
+    sanitized.fields.push({
+      name: truncateText(String(field.name || 'Info'), 256),
+      value: truncateText(String(field.value || '-'), 1024),
+      inline: field.inline === true
+    });
+  });
+
+  return sanitized;
+}
+
+function buildDailyTrackingFallbackEmbed(trackingStatus) {
+  return {
+    title: trackingStatus.exists ? 'Daily Tracking incomplet' : 'Daily Tracking du jour introuvable',
+    color: 15158332,
+    description: trackingStatus.exists
+      ? 'Le fichier a bien une entree pour aujourd hui, mais des champs obligatoires restent vides.'
+      : 'Aucune entree exploitable pour aujourd hui n a ete trouvee dans le fichier source.',
+    fields: [
+      {
+        name: 'Date du controle',
+        value: trackingStatus.date,
+        inline: true
+      },
+      {
+        name: 'Entree retenue',
+        value: truncateText((trackingStatus.entryDate || 'absente') + ' | ' + (trackingStatus.title || 'Daily Tracking'), 1024),
+        inline: true
+      },
+      {
+        name: 'Champs manquants',
+        value: truncateText(
+          trackingStatus.missingProperties.length
+            ? trackingStatus.missingProperties.map(function(item) { return '- ' + item; }).join('\n')
+            : 'Aucun',
+          1024
+        ),
+        inline: false
+      }
+    ],
+    footer: {
+      text: 'Rappel automatique 22:00'
+    },
+    timestamp: new Date().toISOString()
   };
 }
 

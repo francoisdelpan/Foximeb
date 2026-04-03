@@ -149,7 +149,7 @@ function buildWeeklyPlanningPrompts(context, criteria) {
     '1. Respecte strictement les plages de travail.\n' +
     '2. Ne colle pas de sport immediatement a la sortie du travail: garde 30 minutes de tampon.\n' +
     '3. Le deepwork code doit etre groupe en gros blocs quand possible.\n' +
-    '4. Le plan ne doit pas planifier les taches Notion une par une. Il doit seulement proposer des slots de sport, deepwork Utema, une rando eventuelle et le menage du samedi.\n' +
+    '4. Le plan ne doit pas planifier les taches Todoist une par une. Il doit seulement proposer des slots de sport, deepwork Utema, une rando eventuelle et le menage du samedi.\n' +
     '5. Si un jour est trop charge, reduis d abord les petites gestions avant de casser un gros bloc deepwork utile.\n' +
     '6. RH toute la journee veut dire repos Bricoman.\n' +
     '7. N invente jamais de bloc detente. Soit tu ne mets rien, soit tu proposes un slot utile qui remplit une des categories autorisees.\n' +

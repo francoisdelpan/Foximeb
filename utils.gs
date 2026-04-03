@@ -1,29 +1,22 @@
 var APP_TIMEZONE = 'Europe/Paris';
 var WORK_CALENDAR_ID_PROPERTY = 'WORK_CALENDAR_ID';
 var WEEKLY_PLANNING_WEBHOOK_PROPERTY = 'DISCORD_WEEKLY_PLANNING_WEBHOOK_URL';
+var GOOGLE_DAILY_TRACKING_FILE_ID_PROPERTY = 'GOOGLE_DAILY_TRACKING_FILE_ID';
 
 function getScriptConfig() {
   var props = PropertiesService.getScriptProperties();
-  var requiredTrackingProperties = props.getProperty('NOTION_DAILY_TRACKING_REQUIRED_PROPERTIES');
+  var requiredTrackingProperties = props.getProperty('DAILY_TRACKING_REQUIRED_PROPERTIES');
 
   return {
-    notionApiKey: props.getProperty('NOTION_API_KEY'),
-    notionTasksDatabaseId: props.getProperty('NOTION_DATABASE_ID'),
-    notionDailyTrackingDatabaseId: props.getProperty('NOTION_DAILY_TRACKING_DATABASE_ID'),
+    todoistApiToken: props.getProperty('TODOIST_API_TOKEN'),
     openaiApiKey: props.getProperty('OPENAI_API_KEY'),
     discordBriefWebhookUrl: props.getProperty('DISCORD_WEBHOOK_URL'),
     discordPromptWebhookUrl: props.getProperty('DISCORD_IMPROVEMENT_WEBHOOK_URL'),
     discordAlertWebhookUrl: props.getProperty('DISCORD_ALERT_WEBHOOK_URL') || props.getProperty('DISCORD_WEBHOOK_URL'),
     discordWeeklyPlanningWebhookUrl: props.getProperty(WEEKLY_PLANNING_WEBHOOK_PROPERTY) || props.getProperty('DISCORD_WEBHOOK_URL'),
+    googleDailyTrackingFileId: props.getProperty(GOOGLE_DAILY_TRACKING_FILE_ID_PROPERTY),
     workCalendarId: props.getProperty(WORK_CALENDAR_ID_PROPERTY),
-    notionTasksTitleProperty: props.getProperty('NOTION_TASKS_TITLE_PROPERTY') || 'Tasks',
-    notionTasksStatusProperty: props.getProperty('NOTION_TASKS_STATUS_PROPERTY') || 'States',
-    notionTasksPriorityProperty: props.getProperty('NOTION_TASKS_PRIORITY_PROPERTY') || 'Priority',
-    notionTasksDueDateProperty: props.getProperty('NOTION_TASKS_DUE_DATE_PROPERTY') || 'Due date',
-    notionDailyTrackingDateProperty: props.getProperty('NOTION_DAILY_TRACKING_DATE_PROPERTY') || 'Dates',
-    notionDailyTrackingCompletionProperty: props.getProperty('NOTION_DAILY_TRACKING_COMPLETION_PROPERTY') || 'Completed',
-    notionDailyTrackingTitleProperty: props.getProperty('NOTION_DAILY_TRACKING_TITLE_PROPERTY') || 'Name',
-    notionDailyTrackingRequiredProperties: requiredTrackingProperties
+    dailyTrackingRequiredProperties: requiredTrackingProperties
   };
 }
 
@@ -208,6 +201,45 @@ function getDefaultDailyTrackingRequiredProperties() {
     'Sport',
     'Ambiente'
   ];
+}
+
+function getDailyTrackingRequiredProperties(config) {
+  var raw = config && config.dailyTrackingRequiredProperties;
+
+  if (!raw) {
+    return getDefaultDailyTrackingRequiredProperties();
+  }
+
+  return raw.split(',').map(function(item) {
+    return String(item || '').trim();
+  }).filter(function(item) {
+    return Boolean(item);
+  });
+}
+
+function extractGoogleDriveFileId(rawValue) {
+  var value = String(rawValue || '').trim();
+  var match;
+
+  if (!value) {
+    return '';
+  }
+
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(value)) {
+    return value;
+  }
+
+  match = value.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  if (match) {
+    return match[1];
+  }
+
+  match = value.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (match) {
+    return match[1];
+  }
+
+  return value;
 }
 
 function getCalendarByIdOrDefault(calendarId) {

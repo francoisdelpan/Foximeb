@@ -38,43 +38,11 @@ function sendWeeklyPlanningToDiscord(config, planPackage) {
   });
 }
 
-function sendDailyTrackingAlert(config, trackingStatus) {
-  requireConfig(config, ['discordBriefWebhookUrl']);
+function sendDailyTrackingAlert(config, trackingStatus, customEmbed) {
+  requireConfig(config, ['discordAlertWebhookUrl']);
 
-  postDiscordJson(config.discordBriefWebhookUrl, {
-    embeds: [{
-      title: 'Daily Tracking incomplet',
-      color: 15158332,
-      description: trackingStatus.exists
-        ? 'La ligne du jour existe, mais elle ne semble pas remplie.'
-        : 'Aucune ligne du jour n a ete trouvee dans Daily Tracking.',
-      fields: [
-        {
-          name: 'Date',
-          value: trackingStatus.date,
-          inline: true
-        },
-        {
-          name: 'Entree',
-          value: truncateText(trackingStatus.title || 'Daily Tracking', 1024),
-          inline: true
-        },
-        {
-          name: 'Champs obligatoires manquants',
-          value: trackingStatus.missingProperties && trackingStatus.missingProperties.length
-            ? truncateText(trackingStatus.missingProperties.map(function(item) {
-                return '- ' + item;
-              }).join('\n'), 1024)
-            : 'Aucun champ identifie',
-          inline: false
-        }
-      ],
-      footer: {
-        text: 'Rappel automatique 22:00'
-      },
-      timestamp: new Date().toISOString(),
-      url: trackingStatus.url || undefined
-    }]
+  postDiscordJson(config.discordAlertWebhookUrl, {
+    embeds: [customEmbed || buildDailyTrackingFallbackEmbed(trackingStatus)]
   });
 }
 

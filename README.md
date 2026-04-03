@@ -1,11 +1,11 @@
 # Foximeb
 
-Bot personnel Google Apps Script pour piloter la journee depuis Notion, Google Calendar, OpenAI et Discord.
+Bot personnel Google Apps Script pour piloter la journee depuis Todoist, Google Drive, Google Calendar, OpenAI et Discord.
 
 ## Ce que fait Foximeb
 
 - Genere un brief quotidien a partir :
-  - des taches Notion du jour et en retard
+  - des taches Todoist du jour et en retard
   - des evenements Google Calendar du jour
   - des horaires de travail d un agenda dedie si configure
 - Envoie ce brief sur Discord :
@@ -15,10 +15,11 @@ Bot personnel Google Apps Script pour piloter la journee depuis Notion, Google C
   - note auto-critique
   - justification courte
   - bloc unique a copier au format `INSTRUCTION / PROMPT / RESULT`
-- Verifie le `Daily Tracking` dans Notion :
-  - cherche la ligne du jour via la colonne `Dates`
+- Verifie le `Daily Tracking` du soir depuis Google Drive :
+  - lit un fichier Daily Tracking Drive cible via son identifiant direct
+  - detecte l entree du jour dans le fichier
   - controle les champs obligatoires
-  - envoie une alerte dans le salon brief si la ligne est absente ou incomplete
+  - envoie une alerte Discord en embed, generee via OpenAI avec fallback local
 
 ## Structure du projet
 
@@ -27,7 +28,8 @@ Bot personnel Google Apps Script pour piloter la journee depuis Notion, Google C
 - [calendar.gs](/Users/francoisdelpan/Documents/Foximeb/calendar.gs) : lecture et agregation des agendas Google Calendar
 - [weekly_planning.gs](/Users/francoisdelpan/Documents/Foximeb/weekly_planning.gs) : logique et rendu du plan hebdomadaire
 - [discord.gs](/Users/francoisdelpan/Documents/Foximeb/discord.gs) : webhooks Discord et embeds
-- [notion.gs](/Users/francoisdelpan/Documents/Foximeb/notion.gs) : requetes Notion et verification du Daily Tracking
+- [todoist.gs](/Users/francoisdelpan/Documents/Foximeb/todoist.gs) : lecture Todoist et compatibilite de migration pour les taches du brief
+- [daily_tracking_drive.gs](/Users/francoisdelpan/Documents/Foximeb/daily_tracking_drive.gs) : lecture Drive, parsing du fichier `DAILY-TRACKING.base`, application des regles du soir
 - [utils.gs](/Users/francoisdelpan/Documents/Foximeb/utils.gs) : config et helpers partages
 
 ## Variables d'environnement
@@ -37,37 +39,25 @@ A definir dans `Script Properties` de Google Apps Script.
 ### Obligatoires
 
 - `OPENAI_API_KEY`
-- `NOTION_API_KEY`
-- `NOTION_DATABASE_ID`
+- `TODOIST_API_TOKEN`
 - `DISCORD_WEBHOOK_URL`
 - `DISCORD_IMPROVEMENT_WEBHOOK_URL`
 
-### Daily Tracking
+### Daily Tracking du soir
 
-- `NOTION_DAILY_TRACKING_DATABASE_ID`
+- `GOOGLE_DAILY_TRACKING_FILE_ID`
+  ID direct du fichier Google Drive ou Google Doc qui sert de base au Daily Tracking. Tu peux aussi coller l URL complete du fichier: le script sait en extraire l identifiant.
 
 ### Optionnelles
 
 - `DISCORD_ALERT_WEBHOOK_URL`
-  Remplace le salon brief pour certaines alertes si besoin.
+  Webhook cible pour les alertes, dont la notif du soir Daily Tracking. Par defaut, Foximeb reutilise `DISCORD_WEBHOOK_URL`.
 - `DISCORD_WEEKLY_PLANNING_WEBHOOK_URL`
   Webhook du salon cible pour le recap hebdo. Par defaut, Foximeb reutilise `DISCORD_WEBHOOK_URL`.
 - `WORK_CALENDAR_ID`
   ID de l agenda Google Calendar dedie au travail. Si defini, Foximeb l injecte dans le brief comme contrainte dure.
-- `NOTION_TASKS_TITLE_PROPERTY`
-  Par defaut : `Tasks`
-- `NOTION_TASKS_STATUS_PROPERTY`
-  Par defaut : `States`
-- `NOTION_TASKS_PRIORITY_PROPERTY`
-  Par defaut : `Priority`
-- `NOTION_TASKS_DUE_DATE_PROPERTY`
-  Par defaut : `Due date`
-- `NOTION_DAILY_TRACKING_DATE_PROPERTY`
-  Par defaut : `Dates`
-- `NOTION_DAILY_TRACKING_TITLE_PROPERTY`
-  Par defaut : `Name`
-- `NOTION_DAILY_TRACKING_REQUIRED_PROPERTIES`
-  Liste separee par des virgules si tu veux surcharger les champs obligatoires.
+- `DAILY_TRACKING_REQUIRED_PROPERTIES`
+  Liste separee par des virgules si tu veux surcharger les champs obligatoires controles dans le fichier texte.
 
 ## Champs obligatoires Daily Tracking
 
@@ -87,12 +77,16 @@ Par defaut, Foximeb controle :
   Genere le brief du matin, l'envoie sur Discord, puis envoie le bloc d'amelioration dans le second salon.
 - `testBriefDiscordOutputs()`
   Meme logique, sans generer l'audio.
+- `testTodoistTasksForToday()`
+  Verifie la lecture Todoist, la pagination et la repartition `today / overdue` sans passer par Discord.
 - `generateWeeklyPlan()`
   Genere la proposition de slots de la semaine a venir et l envoie sur Discord.
 - `testWeeklyPlan()`
   Lance la generation du plan hebdo a la demande.
 - `sendDailyTrackingReminderIfMissing()`
-  Controle l'entree du jour dans Notion et alerte si des champs obligatoires manquent.
+  Controle l entree du jour dans `DAILY-TRACKING.base`, applique les regles, puis envoie une alerte Discord si besoin.
+- `testDailyTrackingReminderFromDrive()`
+  Lance le meme workflow du soir a la demande pour valider parsing, regles et embed.
 - `setupDailyTrackingReminderTrigger()`
   Cree un trigger Apps Script quotidien vers 22h00.
 - `setupWeeklyPlanningTrigger()`
@@ -110,21 +104,26 @@ Par defaut, Foximeb controle :
 - `generateWeeklyPlan()` lit la semaine de travail a venir a partir de `WORK_CALENDAR_ID`.
 - Le prompt integre les contraintes sport, deepwork Utema, menage du samedi, rando et fin des ecrans.
 - Le resultat est envoye dans Discord sous forme de recap court en embed.
-- La creation automatique de taches Notion n est pas encore branchee.
+- La creation automatique de taches Todoist n est pas encore branchee.
 
 ## Setup
 
 1. Creer le projet Google Apps Script.
 2. Ajouter les fichiers `.gs`.
 3. Renseigner les `Script Properties`.
-4. Verifier que l'integration Notion a acces aux databases utilisees.
-5. Lancer une premiere fois `generateDailyBrief()`.
-6. Lancer `setupDailyTrackingReminderTrigger()` pour installer le rappel du soir.
+4. Ajouter `TODOIST_API_TOKEN` dans les `Script Properties`.
+5. Lancer `testTodoistTasksForToday()` pour verifier la connexion Todoist.
+6. Lancer une premiere fois `generateDailyBrief()`.
+7. Ajouter `GOOGLE_DAILY_TRACKING_FILE_ID` dans les `Script Properties`.
+8. Lancer `setupDailyTrackingReminderTrigger()` pour installer le rappel du soir.
 
-## Notes Notion
+## Notes Daily Tracking du soir
 
-- Pour l'API Notion, utiliser l'ID brut de la database, pas l'URL complete.
-- La database doit etre partagee avec l'integration Notion utilisee par Foximeb.
+- Le script lit directement le fichier Drive cible via `GOOGLE_DAILY_TRACKING_FILE_ID`.
+- Il prend en charge les fichiers texte et Google Docs.
+- Il detecte les entrees via une date presente dans une ligne, au format `yyyy-MM-dd` ou `dd/MM/yyyy`.
+- A l interieur d une entree, les champs sont lus au format `Cle: valeur`, `Cle = valeur`, `Cle - valeur` ou checklist markdown.
+- Si aucune entree du jour n est trouvee, Foximeb prend la plus recente pour expliquer ce qui manque dans l embed.
 
 ## Notes Discord
 
