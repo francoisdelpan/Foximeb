@@ -1,7 +1,7 @@
 var APP_TIMEZONE = 'Europe/Paris';
 var WORK_CALENDAR_ID_PROPERTY = 'WORK_CALENDAR_ID';
 var WEEKLY_PLANNING_WEBHOOK_PROPERTY = 'DISCORD_WEEKLY_PLANNING_WEBHOOK_URL';
-var GOOGLE_DAILY_TRACKING_FILE_ID_PROPERTY = 'GOOGLE_DAILY_TRACKING_FILE_ID';
+var GOOGLE_DAILY_TRACKING_FOLDER_ID_PROPERTY = 'GOOGLE_DAILY_TRACKING_FOLDER_ID';
 
 function getScriptConfig() {
   var props = PropertiesService.getScriptProperties();
@@ -14,7 +14,7 @@ function getScriptConfig() {
     discordPromptWebhookUrl: props.getProperty('DISCORD_IMPROVEMENT_WEBHOOK_URL'),
     discordAlertWebhookUrl: props.getProperty('DISCORD_ALERT_WEBHOOK_URL') || props.getProperty('DISCORD_WEBHOOK_URL'),
     discordWeeklyPlanningWebhookUrl: props.getProperty(WEEKLY_PLANNING_WEBHOOK_PROPERTY) || props.getProperty('DISCORD_WEBHOOK_URL'),
-    googleDailyTrackingFileId: props.getProperty(GOOGLE_DAILY_TRACKING_FILE_ID_PROPERTY),
+    googleDailyTrackingFolderId: props.getProperty(GOOGLE_DAILY_TRACKING_FOLDER_ID_PROPERTY),
     workCalendarId: props.getProperty(WORK_CALENDAR_ID_PROPERTY),
     dailyTrackingRequiredProperties: requiredTrackingProperties
   };
@@ -217,7 +217,7 @@ function getDailyTrackingRequiredProperties(config) {
   });
 }
 
-function extractGoogleDriveFileId(rawValue) {
+function extractGoogleDriveId(rawValue) {
   var value = String(rawValue || '').trim();
   var match;
 
@@ -227,6 +227,11 @@ function extractGoogleDriveFileId(rawValue) {
 
   if (/^[a-zA-Z0-9_-]{20,}$/.test(value)) {
     return value;
+  }
+
+  match = value.match(/\/folders\/([a-zA-Z0-9_-]{20,})/);
+  if (match) {
+    return match[1];
   }
 
   match = value.match(/\/d\/([a-zA-Z0-9_-]{20,})/);

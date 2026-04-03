@@ -148,7 +148,7 @@ function buildImprovementCopyBlock(briefPackage) {
 }
 
 function postDiscordJson(webhookUrl, body) {
-  var response = UrlFetchApp.fetch(webhookUrl, {
+  var response = fetchDiscordWithRetry(webhookUrl, {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(body),
@@ -162,7 +162,7 @@ function postDiscordJson(webhookUrl, body) {
 }
 
 function postDiscordMultipart(webhookUrl, body, fileBlob) {
-  var response = UrlFetchApp.fetch(webhookUrl, {
+  var response = fetchDiscordWithRetry(webhookUrl, {
     method: 'post',
     payload: {
       payload_json: JSON.stringify(body),
@@ -175,4 +175,55 @@ function postDiscordMultipart(webhookUrl, body, fileBlob) {
   if (code < 200 || code >= 300) {
     throw new Error('Erreur Discord fichier : ' + code + ' - ' + response.getContentText());
   }
+}
+
+function fetchDiscordWithRetry(webhookUrl, options) {
+  var maxAttempts = 4;
+  var attempt;
+  var response;
+  var code;
+  var delayMs;
+
+  for (attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    response = UrlFetchApp.fetch(webhookUrl, options);
+    code = response.getResponseCode();
+
+    if (code !== 429) {
+      return response;
+    }
+
+    delayMs = getDiscordRetryDelayMs(response, attempt);
+    Logger.log('Discord rate limit detecte, nouvelle tentative dans ' + delayMs + ' ms');
+    Utilities.sleep(delayMs);
+  }
+
+  return response;
+}
+
+function getDiscordRetryDelayMs(response, attempt) {
+  var headers = response.getAllHeaders ? response.getAllHeaders() : {};
+  var retryAfter = readHeaderIgnoreCase(headers, 'Retry-After');
+  var retryAfterMs = Number(retryAfter);
+
+  if (!isNaN(retryAfterMs) && retryAfterMs > 0) {
+    if (retryAfterMs < 1000) {
+      return Math.ceil(retryAfterMs * 1000);
+    }
+
+    return Math.ceil(retryAfterMs);
+  }
+
+  return attempt * 5000;
+}
+
+function readHeaderIgnoreCase(headers, targetName) {
+  var key;
+
+  for (key in headers) {
+    if (Object.prototype.hasOwnProperty.call(headers, key) && String(key).toLowerCase() === String(targetName).toLowerCase()) {
+      return headers[key];
+    }
+  }
+
+  return '';
 }

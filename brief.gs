@@ -33,7 +33,7 @@ function runDailyTrackingReminderWorkflow() {
   var trackingPackage;
 
   requireConfig(config, [
-    'googleDailyTrackingFileId',
+    'googleDailyTrackingFolderId',
     'openaiApiKey',
     'discordAlertWebhookUrl'
   ]);
@@ -344,7 +344,7 @@ function buildDailyTrackingEmbedPrompts(trackingStatus) {
       'Entree du jour trouvee: ' + (trackingStatus.exists ? 'oui' : 'non') + '\n' +
       'Complete: ' + (trackingStatus.completed ? 'oui' : 'non') + '\n' +
       'Titre: ' + (trackingStatus.title || 'Daily Tracking') + '\n' +
-      'Source: ' + (trackingStatus.sourceName || DAILY_TRACKING_FILE_NAME) + '\n\n' +
+      'Source: ' + (trackingStatus.sourceName || 'Daily Tracking') + '\n\n' +
       'CHAMPS REMPLIS:\n' + filledBlock + '\n\n' +
       'CHAMPS MANQUANTS:\n' + missingBlock + '\n\n' +
       'NOTES:\n' + notesBlock + '\n\n' +

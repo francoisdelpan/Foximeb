@@ -16,7 +16,7 @@ Bot personnel Google Apps Script pour piloter la journee depuis Todoist, Google 
   - justification courte
   - bloc unique a copier au format `INSTRUCTION / PROMPT / RESULT`
 - Verifie le `Daily Tracking` du soir depuis Google Drive :
-  - lit un fichier Daily Tracking Drive cible via son identifiant direct
+  - cherche un fichier Daily Tracking exploitable dans un dossier Drive configure
   - detecte l entree du jour dans le fichier
   - controle les champs obligatoires
   - envoie une alerte Discord en embed, generee via OpenAI avec fallback local
@@ -45,8 +45,8 @@ A definir dans `Script Properties` de Google Apps Script.
 
 ### Daily Tracking du soir
 
-- `GOOGLE_DAILY_TRACKING_FILE_ID`
-  ID direct du fichier Google Drive ou Google Doc qui sert de base au Daily Tracking. Tu peux aussi coller l URL complete du fichier: le script sait en extraire l identifiant.
+- `GOOGLE_DAILY_TRACKING_FOLDER_ID`
+  ID du dossier Google Drive qui contient les fichiers Daily Tracking. Tu peux aussi coller l URL complete du dossier: le script sait en extraire l identifiant.
 
 ### Optionnelles
 
@@ -114,13 +114,14 @@ Par defaut, Foximeb controle :
 4. Ajouter `TODOIST_API_TOKEN` dans les `Script Properties`.
 5. Lancer `testTodoistTasksForToday()` pour verifier la connexion Todoist.
 6. Lancer une premiere fois `generateDailyBrief()`.
-7. Ajouter `GOOGLE_DAILY_TRACKING_FILE_ID` dans les `Script Properties`.
+7. Ajouter `GOOGLE_DAILY_TRACKING_FOLDER_ID` dans les `Script Properties`.
 8. Lancer `setupDailyTrackingReminderTrigger()` pour installer le rappel du soir.
 
 ## Notes Daily Tracking du soir
 
-- Le script lit directement le fichier Drive cible via `GOOGLE_DAILY_TRACKING_FILE_ID`.
-- Il prend en charge les fichiers texte et Google Docs.
+- Le script explore le dossier Drive cible via `GOOGLE_DAILY_TRACKING_FOLDER_ID`.
+- Il priorise les fichiers dont le nom contient la date du jour, puis les fichiers les plus recents.
+- Il prend en charge les fichiers Markdown, `.base` et Google Docs.
 - Il detecte les entrees via une date presente dans une ligne, au format `yyyy-MM-dd` ou `dd/MM/yyyy`.
 - A l interieur d une entree, les champs sont lus au format `Cle: valeur`, `Cle = valeur`, `Cle - valeur` ou checklist markdown.
 - Si aucune entree du jour n est trouvee, Foximeb prend la plus recente pour expliquer ce qui manque dans l embed.

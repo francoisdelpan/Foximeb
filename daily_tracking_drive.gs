@@ -1,10 +1,11 @@
 function getDailyTrackingStatusFromDrive(config, date) {
-  requireConfig(config, ['googleDailyTrackingFileId']);
+  requireConfig(config, ['googleDailyTrackingFolderId']);
 
   var targetDate = date || new Date();
   var isoToday = isoDateParis(targetDate);
   var requiredProperties = getDailyTrackingRequiredProperties(config);
-  var fileId = extractGoogleDriveFileId(config.googleDailyTrackingFileId);
+  var folderId = extractGoogleDriveId(config.googleDailyTrackingFolderId);
+  var folder = null;
   var file = null;
   var content;
   var parsedFile;
@@ -12,9 +13,13 @@ function getDailyTrackingStatusFromDrive(config, date) {
   var assessment;
 
   try {
-    file = DriveApp.getFileById(fileId);
+    folder = DriveApp.getFolderById(folderId);
   } catch (error) {
-    file = null;
+    folder = null;
+  }
+
+  if (folder) {
+    file = findBestDailyTrackingFile(folder, isoToday);
   }
 
   if (!file) {
@@ -24,15 +29,15 @@ function getDailyTrackingStatusFromDrive(config, date) {
       completed: false,
       title: 'Fichier introuvable',
       sourceType: 'google-drive',
-      sourceName: 'DAILY-TRACKING.base',
+      sourceName: 'Daily Tracking folder',
       missingProperties: requiredProperties.slice(),
-      notes: ['Le fichier Daily Tracking est introuvable avec l identifiant ou l URL configuree.']
+      notes: ['Aucun fichier Daily Tracking exploitable n a ete trouve dans le dossier configure.']
     };
   }
 
   content = readDriveFileContent(file);
-  parsedFile = parseDailyTrackingEntries(content);
-  entry = findDailyTrackingEntryForDate(parsedFile.entries, isoToday);
+  parsedFile = parseDailyTrackingFile(content, file.getName());
+  entry = parsedFile.entry;
   assessment = assessDailyTrackingEntry(entry, requiredProperties, isoToday);
 
   assessment.sourceType = 'google-drive';
@@ -40,11 +45,80 @@ function getDailyTrackingStatusFromDrive(config, date) {
   assessment.fileId = file.getId();
   assessment.url = file.getUrl();
   assessment.rawContent = content;
-  assessment.availableEntryDates = parsedFile.entries.map(function(item) {
-    return item.date;
-  });
+  assessment.fileDate = extractDateFromFilename(file.getName());
+  assessment.availableEntryDates = [entry && entry.date ? entry.date : ''];
 
   return assessment;
+}
+
+function findBestDailyTrackingFile(folder, isoToday) {
+  var candidates = [];
+
+  collectDailyTrackingFiles(folder, candidates);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  candidates.sort(function(left, right) {
+    return scoreDailyTrackingFile(right, isoToday) - scoreDailyTrackingFile(left, isoToday);
+  });
+
+  return candidates[0];
+}
+
+function collectDailyTrackingFiles(folder, results) {
+  var files = folder.getFiles();
+  var subfolders = folder.getFolders();
+  var file;
+
+  while (files.hasNext()) {
+    file = files.next();
+
+    if (isDailyTrackingCandidate(file)) {
+      results.push(file);
+    }
+  }
+
+  while (subfolders.hasNext()) {
+    collectDailyTrackingFiles(subfolders.next(), results);
+  }
+}
+
+function isDailyTrackingCandidate(file) {
+  var name = String(file.getName() || '').toLowerCase();
+  var mimeType = file.getMimeType();
+
+  if (mimeType === MimeType.GOOGLE_DOCS) {
+    return true;
+  }
+
+  return /\.md$/i.test(name) || /\.markdown$/i.test(name) || /\.base$/i.test(name);
+}
+
+function scoreDailyTrackingFile(file, isoToday) {
+  var name = String(file.getName() || '');
+  var score = 0;
+  var updatedAt = file.getLastUpdated ? file.getLastUpdated().getTime() : 0;
+
+  if (name.indexOf(isoToday) >= 0) {
+    score += 1000000;
+  }
+
+  if (/daily/i.test(name)) {
+    score += 5000;
+  }
+
+  if (/tracking/i.test(name)) {
+    score += 5000;
+  }
+
+  if (/\.md$/i.test(name)) {
+    score += 1000;
+  }
+
+  score += Math.floor(updatedAt / 1000);
+  return score;
 }
 
 function readDriveFileContent(file) {
@@ -57,11 +131,14 @@ function readDriveFileContent(file) {
   return file.getBlob().getDataAsString();
 }
 
-function parseDailyTrackingEntries(content) {
+function parseDailyTrackingFile(content, fileName) {
   var normalized = String(content || '').replace(/\r\n/g, '\n');
   var lines = normalized.split('\n');
-  var entries = [];
-  var current = null;
+  var fields = {};
+  var entryLines = [];
+  var detectedDates = [];
+  var fieldDate = '';
+  var metadataDate = '';
   var i;
   var line;
   var dateMatch;
@@ -74,44 +151,43 @@ function parseDailyTrackingEntries(content) {
       continue;
     }
 
-    dateMatch = extractDateFromLine(line);
-    if (dateMatch) {
-      if (current) {
-        entries.push(current);
-      }
-
-      current = {
-        date: dateMatch,
-        title: line,
-        fields: {},
-        lines: []
-      };
+    if (line === '---' || line === '- - -' || line === '- - - -') {
       continue;
     }
 
-    if (!current) {
-      continue;
-    }
-
-    current.lines.push(line);
+    entryLines.push(line);
     fieldMatch = parseTrackingFieldLine(line);
 
     if (fieldMatch) {
-      current.fields[fieldMatch.name] = fieldMatch.value;
+      fields[fieldMatch.name] = fieldMatch.value;
+
+      if (fieldMatch.name === 'date') {
+        fieldDate = extractDateFromLine(fieldMatch.value) || fieldDate;
+      }
+
+      if (fieldMatch.name === 'metadata date') {
+        metadataDate = extractDateFromLine(fieldMatch.value) || metadataDate;
+      }
+    }
+
+    dateMatch = extractDateFromLine(line);
+    if (dateMatch) {
+      detectedDates.push(dateMatch);
     }
   }
 
-  if (current) {
-    entries.push(current);
-  }
-
   return {
-    entries: entries
+    entry: {
+      date: metadataDate || extractDateFromFilename(fileName) || fieldDate || detectedDates[0] || '',
+      title: fileName || 'Daily Tracking',
+      fields: fields,
+      lines: entryLines
+    }
   };
 }
 
 function extractDateFromLine(line) {
-  var match = String(line || '').match(/(?:^|[^0-9])(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})(?:[^0-9]|$)/);
+  var match = String(line || '').match(/(?:^|[^0-9])(\d{4}-\d{2}-\d{2}|\d{8}|\d{2}\/\d{2}\/\d{4})(?:[^0-9]|$)/);
   var normalized;
   var parts;
 
@@ -120,6 +196,10 @@ function extractDateFromLine(line) {
   }
 
   normalized = match[1];
+  if (/^\d{8}$/.test(normalized)) {
+    return normalized.slice(0, 4) + '-' + normalized.slice(4, 6) + '-' + normalized.slice(6, 8);
+  }
+
   if (normalized.indexOf('/') >= 0) {
     parts = normalized.split('/');
     return parts[2] + '-' + parts[1] + '-' + parts[0];
@@ -132,9 +212,15 @@ function parseTrackingFieldLine(line) {
   var cleaned = String(line || '')
     .replace(/^[-*]\s*/, '')
     .replace(/^\[(?:x|X| )\]\s*/, '')
-    .replace(/^\d+\.\s*/, '');
-  var match = cleaned.match(/^([^:=-]+?)\s*(?::|=|-)\s*(.+)$/);
+    .replace(/^\d+\.\s*/, '')
+    .replace(/^==\s*/, '')
+    .replace(/\s*==$/, '');
+  var match = cleaned.match(/^(.+?)\s*(?::|=)\s*(.*)$/);
   var checkboxMatch;
+
+  if (!match) {
+    match = cleaned.match(/^(.+?)\s-\s(.*)$/);
+  }
 
   if (match) {
     return {
@@ -157,8 +243,16 @@ function parseTrackingFieldLine(line) {
 function normalizeTrackingFieldName(name) {
   return String(name || '')
     .trim()
+    .replace(/^==\s*/, '')
+    .replace(/\s*==$/, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[-_]+/g, ' ')
     .replace(/\s+/g, ' ')
     .toLowerCase();
+}
+
+function extractDateFromFilename(fileName) {
+  return extractDateFromLine(String(fileName || ''));
 }
 
 function findDailyTrackingEntryForDate(entries, isoDate) {
@@ -202,7 +296,7 @@ function assessDailyTrackingEntry(entry, requiredProperties, isoToday) {
   }
 
   requiredMap.forEach(function(propertyItem) {
-    var value = entry.fields[propertyItem.key];
+    var value = getTrackingFieldValue(entry.fields, propertyItem.label);
 
     if (isTrackingValueFilled(value)) {
       filledProperties.push({
@@ -236,11 +330,67 @@ function assessDailyTrackingEntry(entry, requiredProperties, isoToday) {
   };
 }
 
+function mapTrackingFieldAliases(fieldName) {
+  var normalized = normalizeTrackingFieldName(fieldName);
+
+  if (normalized === 'wake up') {
+    return ['wake up', 'wakeup', 'wake'];
+  }
+
+  if (normalized === 'go to bed') {
+    return ['go to bed', 'bedtime', 'sleep'];
+  }
+
+  if (normalized === 'job') {
+    return ['job', 'work'];
+  }
+
+  if (normalized === 'digital work') {
+    return ['digital work', 'digital'];
+  }
+
+  if (normalized === 'sport') {
+    return ['sport', 'exercise'];
+  }
+
+  if (normalized === 'ambiente') {
+    return ['ambiente', 'mood'];
+  }
+
+  return [normalized];
+}
+
+function getTrackingFieldValue(fields, propertyName) {
+  var aliases = mapTrackingFieldAliases(propertyName);
+  var i;
+
+  for (i = 0; i < aliases.length; i += 1) {
+    if (typeof fields[aliases[i]] !== 'undefined') {
+      return fields[aliases[i]];
+    }
+  }
+
+  return '';
+}
+
+function isExplicitMidnightValue(value) {
+  var normalized = String(value || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .toLowerCase();
+
+  return normalized === '0000' || normalized === '00:00' || normalized === '0h00';
+}
+
 function isTrackingValueFilled(value) {
   var normalized;
 
   if (typeof value === 'undefined' || value === null) {
     return false;
+  }
+
+  if (isExplicitMidnightValue(value)) {
+    return true;
   }
 
   normalized = String(value).trim().toLowerCase();
